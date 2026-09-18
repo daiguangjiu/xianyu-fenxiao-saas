@@ -15,13 +15,17 @@ let pollTimer = null;
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+    headers: { 'Content-Type': 'application/json', 'x-fx-token': TOKEN },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (res.status === 401) { logout(); throw new Error('未登录'); }
+  if (res.status === 401) { logout(); throw new Error('登录已过期，请重新登录'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || '请求失败');
   return data;
+}
+function setTokenCookie(tk) {
+  if (tk) document.cookie = 'fx_token=' + tk + '; Path=/; Max-Age=604800; SameSite=Lax';
+  else document.cookie = 'fx_token=; Path=/; Max-Age=0';
 }
 
 /* ---------- Toast / Modal ---------- */
@@ -44,12 +48,14 @@ async function doLogin(username, password) {
   TOKEN = d.token; ME = d.user;
   localStorage.setItem('fx_token', TOKEN);
   localStorage.setItem('fx_me', JSON.stringify(ME));
+  setTokenCookie(TOKEN);
   enterApp();
 }
 function logout() {
-  fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN } }).catch(() => {});
+  fetch('/api/logout', { method: 'POST', headers: { 'x-fx-token': TOKEN } }).catch(() => {});
   TOKEN = ''; ME = null;
   localStorage.removeItem('fx_token'); localStorage.removeItem('fx_me');
+  setTokenCookie('');
   location.reload();
 }
 function enterApp() {
@@ -672,7 +678,7 @@ $$('.login-demo a').forEach(a => a.addEventListener('click', () => {
 }));
 $('#logoutBtn').addEventListener('click', logout);
 if (TOKEN && ME) {
-  fetch('/api/me', { headers: { Authorization: 'Bearer ' + TOKEN } })
+  fetch('/api/me', { headers: { 'x-fx-token': TOKEN } })
     .then(r => r.json())
     .then(d => { if (d.user) enterApp(); else logout(); })
     .catch(() => { $('#loginPage').classList.remove('hidden'); });
