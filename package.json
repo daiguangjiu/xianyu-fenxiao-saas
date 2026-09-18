@@ -1,0 +1,10 @@
+{
+  "name": "xianyu-fenxiao-saas",
+  "version": "1.0.0",
+  "description": "闲鱼自动分销 SaaS 系统（一期 V1.0）— 零依赖 Node.js 全栈实现",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=18" }
+}
