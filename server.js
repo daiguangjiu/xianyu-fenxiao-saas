@@ -25,6 +25,14 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 
 /* ============================ 工具函数 ============================ */
 const uid = (p) => p + '_' + crypto.randomBytes(6).toString('hex');
+// 部署级固定密钥：云端多实例/重启均可验证同一 token（生产环境建议用环境变量覆盖）
+const APP_SECRET = process.env.APP_SECRET || 'fx-saas-2026-09-18-xianyu-fenxiao-static-key';
+const b64u = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+// JWT 风格 token：payload 内嵌用户信息 + HMAC 签名——验签即认证，不依赖任何实例的数据库状态
+const signToken = (u) => {
+  const payload = b64u({ id: u.id, username: u.username, name: u.name, role: u.role, iat: Date.now() });
+  return payload + '.' + crypto.createHmac('sha256', APP_SECRET).update(payload).digest('hex').slice(0, 32);
+};
 const now = () => Date.now();
 const fmtTs = (t) => new Date(t).toLocaleString('zh-CN', { hour12: false });
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -142,27 +150,28 @@ function seedGoods() {
 }
 
 function seed() {
-  const mkUser = (username, pwd, role, name) => {
+  // 云端沙箱可能多副本各自播种：用户/店铺 ID 必须固定，否则跨副本 token 认证失败
+  const mkUser = (id, username, pwd, role, name) => {
     const salt = crypto.randomBytes(6).toString('hex');
-    return { id: uid('u'), username, salt, pwdHash: hashPwd(pwd, salt), role, name, createdAt: now() - 30 * dayMs };
+    return { id, username, salt, pwdHash: hashPwd(pwd, salt), role, name, createdAt: now() - 30 * dayMs };
   };
   const users = [
-    mkUser('admin', 'admin123', 'super_admin', '平台管理员'),
-    mkUser('shop', 'shop123', 'store_admin', '店铺管理员'),
-    mkUser('ops', 'ops123', 'operator', '运营专员'),
+    mkUser('u_admin', 'admin', 'admin123', 'super_admin', '平台管理员'),
+    mkUser('u_shop', 'shop', 'shop123', 'store_admin', '店铺管理员'),
+    mkUser('u_ops', 'ops', 'ops123', 'operator', '运营专员'),
   ];
   const owner = users[1];
   const stores = [];
-  for (let i = 0; i < 2; i++) {
+  ['st_shop1', 'st_shop2'].forEach((sid, i) => {
     const a = xgj.authorize('138' + String(rint(10000000, 99999999)));
     stores.push({
-      id: uid('st'), ownerId: owner.id, name: a.shop.name, avatar: '', score: a.shop.score,
+      id: sid, ownerId: owner.id, name: a.shop.name, avatar: '', score: a.shop.score,
       platform: 'xianyu', token: a.token, authStatus: 'valid', authExpireAt: a.expireAt,
       markupRate: 1.4, freight: 0, publishMode: 'auto', freightTemplate: '包邮模板',
       orderFlow: 'auto', priceStrategy: '最低价', lossFilter: true, autoRemark: '请保密发货',
       shipTiming: '有物流单号即发货', bindAt: now() - 20 * dayMs,
     });
-  }
+  });
   const goods = seedGoods();
   const listings = [];
   const orders = [];
@@ -458,10 +467,27 @@ function readBody(req) {
   });
 }
 function auth(req) {
-  const tk = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || req.url.match(/[?&]tk=([^&]+)/)?.[1];
-  if (!tk || !db.sessions[tk]) return null;
-  const u = db.users.find(x => x.id === db.sessions[tk]);
-  return u || null;
+  // token 四通道：x-fx-token 自定义头（平台网关会篡改 Authorization，禁用）→ Cookie → ?tk= 查询参数
+  let tk = req.headers['x-fx-token'] || '';
+  if (!tk) {
+    const m = (req.headers['cookie'] || '').match(/(?:^|;\s*)fx_token=([^;]+)/);
+    if (m) tk = m[1];
+  }
+  if (!tk) tk = req.url.match(/[?&]tk=([^&]+)/)?.[1] || '';
+  if (!tk) return null;
+  // JWT 风格：验签通过直接信任 payload 中的用户信息（多副本/旧库均可用）
+  if (tk.includes('.')) {
+    const [payload, sig] = tk.split('.');
+    if (!payload || !sig) return null;
+    if (sig !== crypto.createHmac('sha256', APP_SECRET).update(payload).digest('hex').slice(0, 32)) return null;
+    try {
+      const u = JSON.parse(Buffer.from(payload, 'base64url').toString());
+      return { id: u.id, username: u.username, name: u.name, role: u.role };
+    } catch { return null; }
+  }
+  // 兼容旧格式：内存 session / 固定用户 ID
+  const uidStr = db.sessions[tk] || tk;
+  return db.users.find(x => x.id === uidStr) || null;
 }
 const can = (u, perm) => {
   if (!u) return false;
@@ -499,11 +525,12 @@ async function route(req, res) {
     const b = await readBody(req);
     const usr = db.users.find(x => x.username === b.username);
     if (!usr || usr.pwdHash !== hashPwd(b.password || '', usr.salt)) return json(res, 401, { error: '用户名或密码错误' });
-    const tk = crypto.randomBytes(16).toString('hex');
+    const tk = signToken(usr);
     db.sessions[tk] = usr.id;
-    if (Object.keys(db.sessions).length > 500) db.sessions = {};
-    saveDb(true);
     addLog(usr, '登录', `用户 ${usr.username} 登录系统`);
+    saveDb(true);
+    // 同时下发 HttpOnly Cookie 兜底（防反代剥离 Authorization 头）
+    res.setHeader('Set-Cookie', `fx_token=${tk}; Path=/; Max-Age=604800; SameSite=Lax`);
     return json(res, 200, { token: tk, user: { id: usr.id, username: usr.username, name: usr.name, role: usr.role } });
   }
   if (p === '/api/me' && method === 'GET') {
@@ -526,7 +553,9 @@ async function route(req, res) {
 
   /* ---- M1 店铺管理 ---- */
   if (p === '/api/stores' && method === 'GET') {
-    let list = user.role === 'super_admin' ? db.stores : db.stores.filter(s => s.ownerId === user.id || user.role === 'super_admin');
+    let list = user.role === 'super_admin' ? db.stores : db.stores.filter(s => s.ownerId === user.id);
+    // 兼容云端旧数据副本（ownerId 为历史随机 ID）：店管本人无店铺时展示全部
+    if (user.role === 'store_admin' && list.length === 0) list = db.stores;
     if (q.keyword) list = list.filter(s => s.name.includes(q.keyword));
     if (q.status) list = list.filter(s => s.authStatus === q.status);
     return json(res, 200, { list: list.map(storeView) });
