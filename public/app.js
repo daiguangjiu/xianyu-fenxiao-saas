@@ -675,5 +675,8 @@ if (TOKEN && ME) {
   fetch('/api/me', { headers: { Authorization: 'Bearer ' + TOKEN } })
     .then(r => r.json())
     .then(d => { if (d.user) enterApp(); else logout(); })
-    .catch(() => {});
+    .catch(() => { $('#loginPage').classList.remove('hidden'); });
+} else {
+  // 首次访问（无登录态）：显示登录页
+  $('#loginPage').classList.remove('hidden');
 }
