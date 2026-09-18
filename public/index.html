@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>闲鱼自动分销 SaaS</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+</head>
+<body>
+<!-- 登录页 -->
+<div id="loginPage" class="login-page hidden">
+  <div class="login-card">
+    <div class="login-logo">🐟</div>
+    <h1>闲鱼自动分销系统</h1>
+    <p class="login-sub">0 囤货 · 全链路自动化 · 多店管理 · 利润透明</p>
+    <div class="form-item"><label>用户名</label><input id="loginUser" placeholder="请输入用户名"></div>
+    <div class="form-item"><label>密码</label><input id="loginPwd" type="password" placeholder="请输入密码" @keydown></div>
+    <button id="loginBtn" class="btn primary block">登 录</button>
+    <div class="login-demo">
+      <span>演示账号：</span>
+      <a data-acc="admin|admin123">超级管理员</a>
+      <a data-acc="shop|shop123">店铺管理员</a>
+      <a data-acc="ops|ops123">运营人员</a>
+    </div>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-icon">🐟</span><div><b>自动分销</b><small>闲鱼版 SaaS V1.0</small></div></div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot">闲管家开放平台对接 · 一期</div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h2 id="pageTitle">数据看板</h2>
+      <div class="topbar-right">
+        <div class="notif-wrap">
+          <button id="notifBtn" class="icon-btn" title="消息通知">🔔<span id="notifDot" class="dot hidden"></span></button>
+          <div id="notifPanel" class="notif-panel hidden"></div>
+        </div>
+        <span id="userBadge" class="user-badge"></span>
+        <button id="logoutBtn" class="btn ghost sm">退出</button>
+      </div>
+    </header>
+    <section id="pageContent" class="page-content"></section>
+  </main>
+</div>
+
+<!-- 通用弹窗 -->
+<div id="modalMask" class="modal-mask hidden"><div id="modalBox" class="modal-box"></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
